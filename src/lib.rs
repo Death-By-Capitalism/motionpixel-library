@@ -42,7 +42,7 @@ fn test_sanity_check() {
 /// A single animation container.
 /// 
 /// Assume this reflects a single animation container format. All of the frames are kept inside the animation 
-/// directory, and the residual `fps`, `direction` and `looping` items are stored within the `.content` file inside 
+/// directory, and the residual `fps`, `direction` and `looping` items are stored within the `.animation` file inside 
 /// that directory. The format doesn't really care what image format the frames actually are, as long as the `image` 
 /// crate *can read the format and convert it*. If you need more information about what formats are actually desired, 
 /// see [this module for container formats](https://docs.rs/image/0.24.6/image/enum.ImageFormat.html) and [this module 
