@@ -7,9 +7,36 @@ use std::io::{self, Write};
 use std::fs;
 
 use image;
-use serde::ser::SerializeStruct;
 use serde:: { Serialize, Deserialize };
 use log:: { trace, info, warn, error };
+
+
+
+/// To run this test, put some images (preferrably, all the same dimensions) in a local folder as defined below.
+/// This function will call the `Self::new(...)` method to completely create a brand-new container format using 
+/// that directory, which you can check for completeness manually.
+#[test]
+fn test_new() {
+    
+    let mut animation_container = AnimationContainer::new(&Path::new("tests/new_motionpixel_container/"));
+
+    // The animation container must be okay.
+    assert!(animation_container.is_ok());
+
+    let mut animation_container = animation_container.unwrap();
+
+    // Writing the animation metadata should also be okay.
+    assert!(animation_container.overwrite().is_ok());
+
+}
+
+/// Permform a sanity check.
+#[test]
+fn test_sanity_check() {
+
+    
+
+}
 
 
 /// A single animation container.
@@ -20,7 +47,7 @@ use log:: { trace, info, warn, error };
 /// crate *can read the format and convert it*. If you need more information about what formats are actually desired, 
 /// see [this module for container formats](https://docs.rs/image/0.24.6/image/enum.ImageFormat.html) and [this module 
 /// for image color values](https://docs.rs/image/0.24.6/image/enum.DynamicImage.html).
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AnimationContainer {
 
     /// How many frames are shown per second? And, how dynamic do we want the frame rate to be?
@@ -37,7 +64,7 @@ pub struct AnimationContainer {
     /// This is **not** converted or anything special on your filesystem. This is simply a collection of the files 
     /// which have been *read* from the directory of choice, and then copied into memory. The files themselves are left
     /// as-is.
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, skip_deserializing)]
     pub frames:         Vec<image::DynamicImage>,
 
     // This is the location we took the frames from.
@@ -105,8 +132,8 @@ impl AnimationContainer {
 
     /// Overwrite the container meta information with what we currently have.
     /// 
-    /// Call this method when you don't care about overwriting meta information, if it's your intention to do so.
-    fn overwrite(&self) -> io::Result<()> {
+    /// Call this method when you don't care about overwriting meta information, or if it's your intention to do so.
+    pub fn write_destructive(&self) -> io::Result<()> {
         
         let mut working_directory = self.working_directory.clone();
         working_directory.push(".animation");
@@ -118,6 +145,41 @@ impl AnimationContainer {
 
         Ok(())
         
+    }
+
+    /// Attempt to create an `AnimationContainer` from the contents of an animation container directory.
+    pub fn from_directory(anim_dir: &Path) -> result::ContainerResult<Self> {
+        
+        // Catch paths that are not an animation container.
+        if anim_dir.is_file() {
+            return result::ContainerResult::Err(result::ContainerErrorKind::NotAnAnimationDirectory)
+        }
+
+        // Set us up to get the meta info for this animation.
+        let mut anim_dir_meta = anim_dir.to_owned();
+        anim_dir_meta.push(".animation");
+        let file_operation = fs::File::open(anim_dir_meta);
+
+        // Catch file operations not being usable because of an IO error.
+        if file_operation.is_err() {
+            return result::ContainerResult::Err(result::ContainerErrorKind::IoError(file_operation.unwrap_err()))
+        }
+
+        // Decode into struct.
+        let file_operation = file_operation.unwrap();
+        match rmp_serde::decode::from_read::<fs::File, AnimationContainer>(file_operation) {
+            
+            Ok(containerstruct) => {
+                return result::ContainerResult::Ok(containerstruct)
+            },
+
+            Err(why)            => {
+                // Catch decode issues.
+                return result::ContainerResult::Err(result::ContainerErrorKind::MetadataMalformed)
+            }
+
+        }
+
     }
     
     // /// Ensure that the working directory for our animation container still exists and the contents of which are still 
@@ -150,32 +212,6 @@ impl AnimationContainer {
 
     // }
     
-}
-
-/// To run this test, put some images (preferrably, all the same dimensions) in a local folder as defined below.
-/// This function will call the `Self::new(...)` method to completely create a brand-new container format using 
-/// that directory, which you can check for completeness manually.
-#[test]
-fn new() {
-    
-    let mut animation_container = AnimationContainer::new(&Path::new("tests/new_motionpixel_container/"));
-
-    // The animation container must be okay.
-    assert!(animation_container.is_ok());
-
-    let mut animation_container = animation_container.unwrap();
-
-    // Writing the animation metadata should also be okay.
-    assert!(animation_container.overwrite().is_ok());
-
-}
-
-/// Permform a sanity check.
-#[test]
-fn sanity_check() {
-
-    
-
 }
 
 /// The frame rate type of the animation.
@@ -225,5 +261,42 @@ pub enum AnimatedLoopingTechnique {
 
     /// The animation ends when the last frame is reached, with no need for looping.
     NoLoop,
+
+}
+
+/// Specialized types for interacting with the expected output of `AnimationContainer`.
+pub mod result {
+
+    pub enum ContainerResult<T> {
+
+        Ok(T),
+        
+        Err(ContainerErrorKind)
+    
+    }
+    
+    /// Types of errors that might happen with `AnimationContainer` and the context in which you work with it.
+    pub enum ContainerErrorKind {
+    
+        /// If you provided a path to the supposed animation container directory, it's probably *not* a directory...? 
+        /// You're probably pointing at a file.
+        NotAnAnimationDirectory,
+    
+        /// The animation directory contains new content and our object is out-of-date.
+        FilesystemWasUpdatedWithoutSyncing,
+
+        /// The contents of the animation meta file are not what we expected.
+        MetadataMalformed,
+    
+        /// Related to an IO Error.
+        IoError(std::io::Error),
+
+        /// A serde-related encoder error.
+        EncodeError(rmp_serde::encode::Error),
+
+        /// A serde-related decoder error.
+        DecodeError(rmp_serde::encode::Error),
+    
+    }
 
 }
